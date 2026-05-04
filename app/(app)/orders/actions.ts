@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jobSchema } from '@/lib/validators';
 import { sendEmail } from '@/lib/resend';
 import { orderReadyEmail, orderDeliveredEmail } from '@/lib/email-templates';
+import { calculatePrice } from '@/lib/pricing/calculate';
 
 export async function createJobAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createSupabaseServerClient();
@@ -16,6 +17,34 @@ export async function createJobAction(formData: FormData): Promise<{ ok: boolean
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
 
   const { finishings, ...job } = parsed.data;
+
+  // Server-side guard: never allow a job priced below cost.
+  const [paperRes, productRes, foRes, settingsRes] = await Promise.all([
+    job.paper_stock_id
+      ? supabase.from('paper_stocks').select('cost_per_sheet').eq('id', job.paper_stock_id).single<{ cost_per_sheet: number }>()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('products').select('base_price').eq('id', job.product_id).single<{ base_price: number }>(),
+    finishings.length
+      ? supabase.from('finishing_options').select('id, cost_per_unit').in('id', finishings.map((f) => f.finishing_option_id))
+      : Promise.resolve({ data: [] as { id: string; cost_per_unit: number }[], error: null }),
+    supabase.from('settings').select('rush_multiplier, tax_rate').eq('id', 1).single<{ rush_multiplier: number; tax_rate: number }>(),
+  ]);
+
+  const foMap = new Map((foRes.data ?? []).map((f) => [f.id, f.cost_per_unit]));
+  const breakdown = calculatePrice({
+    paperCostPerSheet: paperRes.data?.cost_per_sheet ?? 0,
+    paperQty: job.paper_qty ?? 0,
+    finishings: finishings.map((f) => ({ cost_per_unit: foMap.get(f.finishing_option_id) ?? 0, qty: f.qty })),
+    productBasePrice: productRes.data?.base_price ?? 0,
+    unitPrice: job.unit_price,
+    quantity: job.quantity,
+    isRush: job.is_rush ?? false,
+    rushMultiplier: Number(settingsRes.data?.rush_multiplier ?? 0.25),
+    taxRate: Number(settingsRes.data?.tax_rate ?? 0),
+  });
+  if (breakdown.totalCost > 0 && breakdown.revenue < breakdown.totalCost) {
+    return { ok: false, error: `Price is below cost (loss of $${(breakdown.totalCost - breakdown.revenue).toFixed(2)}). Raise the unit price.` };
+  }
 
   const { data: created, error } = await supabase
     .from('jobs')

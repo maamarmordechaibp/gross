@@ -193,6 +193,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
   const stockAvailable = paper ? paper.qty_on_hand - paper.qty_reserved : 0;
   const stockOk = !paper || paperQty <= stockAvailable;
   const customerRevenue = (quantity || 0) * (unitPrice || 0);
+  const belowCost = breakdown.totalCost > 0 && breakdown.revenue < breakdown.totalCost;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-3">
@@ -458,10 +459,15 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
 
       <div className="space-y-4 lg:sticky lg:top-20 lg:h-fit">
         <PriceBreakdownCard breakdown={breakdown} />
-        <Button type="submit" className="w-full" size="lg" disabled={pending || !customerId || !productId || !stockOk}>
+        <Button type="submit" className="w-full" size="lg" disabled={pending || !customerId || !productId || !stockOk || belowCost}>
           {pending ? 'Creating…' : 'Create Order'}
         </Button>
         {!stockOk && <p className="text-center text-xs text-destructive">Resolve stock to proceed</p>}
+        {belowCost && (
+          <p className="text-center text-xs text-destructive">
+            Price is below cost (loss of ${(breakdown.totalCost - breakdown.revenue).toFixed(2)}). Raise the unit price to proceed.
+          </p>
+        )}
       </div>
     </form>
   );
