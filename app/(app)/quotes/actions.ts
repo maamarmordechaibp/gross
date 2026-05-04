@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { sendEmail } from '@/lib/resend';
+import { quoteSentEmail } from '@/lib/email-templates';
+import { jobSchema } from '@/lib/validators';
+import { calculatePrice } from '@/lib/pricing/calculate';
 
 const quoteCreateSchema = z.object({
   customer_id: z.string().uuid(),
@@ -50,29 +53,99 @@ export async function sendQuoteAction(quoteId: string) {
   const supabase = await createSupabaseServerClient();
   const { data: q, error } = await supabase
     .from('quotes')
-    .select('id, quote_number, total, approval_token, customers(name, email)')
+    .select('id, quote_number, total, approval_token, valid_until, customers(name, email)')
     .eq('id', quoteId)
     .single<{
       id: string; quote_number: string; total: number; approval_token: string;
+      valid_until: string | null;
       customers: { name: string; email: string | null };
     }>();
   if (error || !q) return { ok: false as const, error: error?.message ?? 'Quote not found' };
 
+  const { data: settings } = await supabase.from('settings').select('company_email').eq('id', 1).single<{ company_email: string | null }>();
+  const replyTo = settings?.company_email ?? undefined;
+
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-  const url = `${baseUrl}/quote/approve?token=${q.approval_token}`;
+  const url = `${baseUrl}/quote/approve/${q.approval_token}`;
 
   if (q.customers.email) {
-    await sendEmail({
-      to: q.customers.email,
-      subject: `Quote ${q.quote_number} from Gross Printing`,
-      html: `<p>Hi ${q.customers.name},</p>
-             <p>Your quote <strong>${q.quote_number}</strong> for <strong>$${Number(q.total).toFixed(2)}</strong> is ready.</p>
-             <p><a href="${url}" style="background:#4f46e5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Review &amp; approve</a></p>`,
+    const tpl = quoteSentEmail({
+      quote_number: q.quote_number,
+      customer_name: q.customers.name,
+      total: Number(q.total),
+      valid_until: q.valid_until,
+      approve_url: url,
     });
+    await sendEmail({ to: q.customers.email, reply_to: replyTo, ...tpl });
   }
 
   await supabase.from('quotes').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', quoteId);
   revalidatePath('/quotes');
   revalidatePath(`/quotes/${quoteId}`);
   return { ok: true as const, url };
+}
+
+/**
+ * Create a quote from the order-form payload (same shape as createJobAction).
+ * Stores full job spec so it can be materialized into a job upon approval.
+ */
+export async function createQuoteFromOrderFormAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not authenticated' };
+
+  const raw = JSON.parse(String(formData.get('payload')));
+  const parsed = jobSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+
+  const { finishings, ...job } = parsed.data;
+
+  // Recompute totals server-side so customer sees authoritative numbers.
+  const [paperRes, productRes, foRes, settingsRes] = await Promise.all([
+    job.paper_stock_id
+      ? supabase.from('paper_stocks').select('cost_per_sheet').eq('id', job.paper_stock_id).single<{ cost_per_sheet: number }>()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('products').select('base_price').eq('id', job.product_id).single<{ base_price: number }>(),
+    finishings.length
+      ? supabase.from('finishing_options').select('id, cost_per_unit').in('id', finishings.map((f) => f.finishing_option_id))
+      : Promise.resolve({ data: [] as { id: string; cost_per_unit: number }[], error: null }),
+    supabase.from('settings').select('rush_multiplier, tax_rate').eq('id', 1).single<{ rush_multiplier: number; tax_rate: number }>(),
+  ]);
+
+  const foMap = new Map((foRes.data ?? []).map((f) => [f.id, f.cost_per_unit]));
+  const breakdown = calculatePrice({
+    paperCostPerSheet: paperRes.data?.cost_per_sheet ?? 0,
+    paperQty: job.paper_qty ?? 0,
+    finishings: finishings.map((f) => ({ cost_per_unit: foMap.get(f.finishing_option_id) ?? 0, qty: f.qty })),
+    productBasePrice: productRes.data?.base_price ?? 0,
+    unitPrice: job.unit_price,
+    quantity: job.quantity,
+    isRush: job.is_rush ?? false,
+    rushMultiplier: Number(settingsRes.data?.rush_multiplier ?? 0.25),
+    taxRate: Number(settingsRes.data?.tax_rate ?? 0),
+  });
+  if (breakdown.totalCost > 0 && breakdown.revenue < breakdown.totalCost) {
+    return { ok: false, error: `Price is below cost (loss of $${(breakdown.totalCost - breakdown.revenue).toFixed(2)}). Raise the unit price.` };
+  }
+
+  const validUntil = new Date();
+  validUntil.setDate(validUntil.getDate() + 30);
+
+  const { data, error } = await supabase
+    .from('quotes')
+    .insert({
+      customer_id: job.customer_id,
+      subtotal: breakdown.revenue,
+      tax: breakdown.tax,
+      total: breakdown.grandTotal,
+      spec: { ...parsed.data },
+      valid_until: validUntil.toISOString(),
+      created_by: user.id,
+    })
+    .select('id')
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/quotes');
+  redirect(`/quotes/${data!.id}`);
 }

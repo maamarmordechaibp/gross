@@ -32,8 +32,8 @@ export default async function QuoteApprovalPage({ params }: { params: Promise<{ 
           <div className="border-t pt-3">
             <Row k="Total" v={formatCurrency(quote.total)} bold />
           </div>
-          {quote.expires_at && (
-            <p className="text-xs text-muted-foreground">Valid until {formatDate(quote.expires_at)}</p>
+          {quote.valid_until && (
+            <p className="text-xs text-muted-foreground">Valid until {formatDate(quote.valid_until)}</p>
           )}
         </CardContent>
       </Card>

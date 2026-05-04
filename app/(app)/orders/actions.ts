@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { jobSchema } from '@/lib/validators';
 import { sendEmail } from '@/lib/resend';
-import { orderReadyEmail, orderDeliveredEmail } from '@/lib/email-templates';
+import { orderReadyEmail, orderDeliveredEmail, invoiceCreatedEmail } from '@/lib/email-templates';
 import { calculatePrice } from '@/lib/pricing/calculate';
 
 export async function createJobAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
@@ -73,14 +73,61 @@ export async function updateJobStatusAction(jobId: string, status: string) {
     .from('jobs')
     .update(patch)
     .eq('id', jobId)
-    .select('id, job_number, status, quantity, unit_price, due_date, notes, customers(name, email), products(name)')
+    .select('id, job_number, status, customer_id, quantity, unit_price, due_date, notes, customers(name, email), products(name)')
     .single<{
-      id: string; job_number: string; status: string;
+      id: string; job_number: string; status: string; customer_id: string;
       quantity: number; unit_price: number; due_date: string | null; notes: string | null;
       customers: { name: string; email: string | null } | null;
       products: { name: string } | null;
     }>();
   if (error) return { ok: false, error: error.message };
+
+  // Resolve reply-to once for any customer-facing email below.
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('company_email, tax_rate')
+    .eq('id', 1)
+    .single<{ company_email: string | null; tax_rate: number }>();
+  const replyTo = settings?.company_email ?? undefined;
+
+  // On completion: auto-create a draft invoice if none exists for this job.
+  if (status === 'completed' && job) {
+    const { data: existing } = await supabase
+      .from('invoices')
+      .select('id')
+      .eq('job_id', job.id)
+      .maybeSingle();
+    if (!existing) {
+      const subtotal = (job.quantity || 0) * (job.unit_price || 0);
+      const taxRate = Number(settings?.tax_rate ?? 0);
+      const tax = +(subtotal * taxRate).toFixed(2);
+      const total = +(subtotal + tax).toFixed(2);
+      const due = new Date();
+      due.setDate(due.getDate() + 30);
+      const { data: inv } = await supabase
+        .from('invoices')
+        .insert({
+          customer_id: job.customer_id,
+          job_id: job.id,
+          subtotal, tax, total,
+          due_date: due.toISOString().slice(0, 10),
+          status: 'draft',
+        })
+        .select('id, invoice_number, total, due_date')
+        .single<{ id: string; invoice_number: string; total: number; due_date: string | null }>();
+      if (inv && job.customers?.email) {
+        const tpl = invoiceCreatedEmail({
+          invoice_number: inv.invoice_number,
+          customer_name: job.customers.name,
+          total: Number(inv.total),
+          due_date: inv.due_date,
+          job_number: job.job_number,
+        });
+        await sendEmail({ to: job.customers.email, reply_to: replyTo, ...tpl });
+      }
+      revalidatePath('/invoices');
+    }
+  }
 
   // Notify customer when job is ready (with invoice) or delivered
   if ((status === 'completed' || status === 'delivered') && job?.customers?.email) {
@@ -93,7 +140,7 @@ export async function updateJobStatusAction(jobId: string, status: string) {
       due_date: job.due_date,
       notes: job.notes,
     });
-    await sendEmail({ to: job.customers.email, ...tpl });
+    await sendEmail({ to: job.customers.email, reply_to: replyTo, ...tpl });
   }
 
   revalidatePath('/production');

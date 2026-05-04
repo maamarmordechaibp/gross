@@ -21,7 +21,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
   if (!q) notFound();
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
-  const approveUrl = q.approval_token ? `${baseUrl}/quote/approve?token=${q.approval_token}` : null;
+  const approveUrl = q.approval_token ? `${baseUrl}/quote/approve/${q.approval_token}` : null;
 
   return (
     <div className="space-y-6">

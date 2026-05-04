@@ -147,3 +147,62 @@ export function orderDeliveredEmail(job: InvoiceJob) {
     text: `${greeting}\n\n#${job.job_number} (${job.product_name ?? 'order'}) has been delivered. Balance if unpaid: ${money(total)}.\n\nThanks again,\n${BRAND.name}`,
   };
 }
+
+export function quoteSentEmail(args: {
+  quote_number: string;
+  customer_name: string | null;
+  total: number;
+  valid_until: string | null;
+  approve_url: string;
+}) {
+  const fname = firstName(args.customer_name);
+  const greeting = fname ? `Hi ${fname},` : 'Hello,';
+  const preheader = `Quote ${args.quote_number} — ${money(args.total)}`;
+  const inner = `
+    <p style="margin:0 0 14px;">${greeting}</p>
+    <p style="margin:0 0 14px;">
+      Here is your quote <strong>${args.quote_number}</strong> for <strong>${money(args.total)}</strong>.
+      ${args.valid_until ? `Valid through <strong>${dateStr(args.valid_until)}</strong>.` : ''}
+    </p>
+    <p style="margin:0 0 22px;">
+      <a href="${args.approve_url}" style="background:${BRAND.accent};color:#fff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Review &amp; approve quote</a>
+    </p>
+    <p style="margin:0 0 14px;color:${BRAND.muted};font-size:13px;">
+      Questions or changes? Just reply to this email.
+    </p>
+    <p style="margin:0 0 4px;">Thanks,</p>
+    <p style="margin:0;">— ${BRAND.name}</p>
+  `;
+  return {
+    subject: `Quote ${args.quote_number} — ${money(args.total)}`,
+    html: shell(inner, preheader),
+    text: `${greeting}\n\nQuote ${args.quote_number} — ${money(args.total)}\nApprove: ${args.approve_url}\n\n— ${BRAND.name}`,
+  };
+}
+
+export function invoiceCreatedEmail(args: {
+  invoice_number: string;
+  customer_name: string | null;
+  total: number;
+  due_date: string | null;
+  job_number: string | null;
+}) {
+  const fname = firstName(args.customer_name);
+  const greeting = fname ? `Hi ${fname},` : 'Hello,';
+  const preheader = `Invoice ${args.invoice_number} — ${money(args.total)}`;
+  const inner = `
+    <p style="margin:0 0 14px;">${greeting}</p>
+    <p style="margin:0 0 14px;">
+      Invoice <strong>${args.invoice_number}</strong>${args.job_number ? ` for order #${args.job_number}` : ''}
+      is ready: <strong>${money(args.total)}</strong>${args.due_date ? `, due <strong>${dateStr(args.due_date)}</strong>` : ''}.
+    </p>
+    <p style="margin:0 0 14px;color:${BRAND.muted};font-size:13px;">Reply to this email to arrange payment or with any questions.</p>
+    <p style="margin:0 0 4px;">Thanks,</p>
+    <p style="margin:0;">— ${BRAND.name}</p>
+  `;
+  return {
+    subject: `Invoice ${args.invoice_number} — ${money(args.total)}`,
+    html: shell(inner, preheader),
+    text: `${greeting}\n\nInvoice ${args.invoice_number} — ${money(args.total)}${args.due_date ? `, due ${dateStr(args.due_date)}` : ''}.\n\n— ${BRAND.name}`,
+  };
+}

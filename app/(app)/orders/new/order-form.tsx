@@ -15,6 +15,7 @@ import { computeImposition, parsePaperSize, PIECE_PRESETS, type PieceSize } from
 import { formatCurrency } from '@/lib/utils';
 import type { Customer, Product, PaperStock, FinishingOption } from '@/types/database';
 import { createJobAction } from '../actions';
+import { createQuoteFromOrderFormAction } from '../../quotes/actions';
 import { toast } from 'sonner';
 import { Flame } from 'lucide-react';
 
@@ -191,6 +192,28 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
     startTransition(async () => {
       const res = await createJobAction(fd);
       if (res && !res.ok) toast.error(res.error ?? 'Failed to create job');
+    });
+  }
+
+  function onSaveAsQuote() {
+    const payload = {
+      customer_id: customerId,
+      product_id: productId,
+      quantity, unit_price: unitPrice,
+      paper_stock_id: paperId || null,
+      paper_qty: paperQty || 0,
+      is_rush: isRush,
+      priority,
+      due_date: dueDate || null,
+      specs: { ...specs, piece_size: { w: pieceW, h: pieceH } },
+      notes: notes || null,
+      finishings: Object.entries(pickedFinishings).map(([finishing_option_id, qty]) => ({ finishing_option_id, qty })),
+    };
+    const fd = new FormData();
+    fd.set('payload', JSON.stringify(payload));
+    startTransition(async () => {
+      const res = await createQuoteFromOrderFormAction(fd);
+      if (res && !res.ok) toast.error(res.error ?? 'Failed to create quote');
     });
   }
 
@@ -465,6 +488,16 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
         <PriceBreakdownCard breakdown={breakdown} />
         <Button type="submit" className="w-full" size="lg" disabled={pending || !customerId || !productId || !stockOk || belowCost}>
           {pending ? 'Creating…' : 'Create Order'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          size="lg"
+          onClick={onSaveAsQuote}
+          disabled={pending || !customerId || !productId || belowCost}
+        >
+          {pending ? 'Saving…' : 'Save as Quote'}
         </Button>
         {!stockOk && <p className="text-center text-xs text-destructive">Resolve stock to proceed</p>}
         {belowCost && (

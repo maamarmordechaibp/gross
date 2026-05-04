@@ -137,6 +137,7 @@ export interface Quote {
   valid_until: string | null;
   sent_at: string | null;
   decided_at: string | null;
+  spec: Record<string, unknown> | null;
   created_at: string;
 }
 
