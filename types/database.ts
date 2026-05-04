@@ -63,6 +63,8 @@ export interface PaperStock {
   qty_reserved: number;
   reorder_threshold: number;
   cost_per_sheet: number;
+  bw_ink_per_side: number;
+  color_ink_per_side: number;
   active: boolean;
 }
 

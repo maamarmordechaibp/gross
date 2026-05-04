@@ -46,6 +46,8 @@ export const paperStockSchema = z.object({
   qty_on_hand: z.coerce.number().int().nonnegative().default(0),
   reorder_threshold: z.coerce.number().int().nonnegative().default(100),
   cost_per_sheet: z.coerce.number().nonnegative().default(0),
+  bw_ink_per_side: z.coerce.number().nonnegative().default(0.015),
+  color_ink_per_side: z.coerce.number().nonnegative().default(0.08),
 });
 
 export const finishingSchema = z.object({

@@ -1,33 +1,27 @@
-/**
+﻿/**
  * Auto-pricing engine.
  *
- * Computes a customer-facing unit price (USD per finished piece) from:
- *   - paper cost per sheet
- *   - imposition (pieces per sheet)
- *   - color / B&W
- *   - single / double sided
- *   - finishing total
- *   - quantity (drives volume tier markup)
+ * Customer-facing unit price (USD per finished piece) =
+ *     (paper + ink + finishing) per piece × (1 + margin)
  *
- * The output is the recommended price-per-piece. The user can still override.
+ * Per-paper ink rates and the default margin are stored in the DB
+ * (paper_stocks.bw_ink_per_side / color_ink_per_side, settings.default_margin_pct).
  */
 
 export type ColorMode = 'color' | 'bw';
 export type Sides = 1 | 2;
 
 export interface AutoPriceInput {
-  /** Paper cost per sheet (USD). 0 if no paper picked. */
   paperCostPerSheet: number;
-  /** Pieces fitting on one sheet from imposition. Defaults to 1 if unknown. */
   piecesPerSheet: number;
-  /** Total finished pieces being ordered. */
   quantity: number;
-  /** Color or black & white. */
   color: ColorMode;
-  /** 1 = single sided, 2 = double sided. */
   sides: Sides;
-  /** Sum of (cost_per_unit × qty) for selected finishings. */
   finishingsTotalCost: number;
+  bwInkPerSide: number;
+  colorInkPerSide: number;
+  /** e.g. 1.00 = +100% (2x cost), 0.5 = +50% */
+  marginPct: number;
 }
 
 export interface AutoPriceResult {
@@ -36,40 +30,11 @@ export interface AutoPriceResult {
   paperPerPiece: number;
   inkPerPiece: number;
   finishingPerPiece: number;
-  markupMultiplier: number;
-  tier: string;
-  minPerPiece: number;
+  marginPct: number;
 }
 
-/**
- * Click charge per side (USD). Captures toner/ink + maintenance amortization.
- * Tweak in settings later — these are good starting defaults for digital.
- */
-const INK_COLOR_PER_SIDE = 0.08;
-const INK_BW_PER_SIDE = 0.015;
-
-/**
- * Volume tiers — smaller orders carry a bigger markup multiplier and a higher
- * minimum per-piece floor. This mirrors how most print shops actually quote.
- */
-const TIERS: Array<{ upTo: number; mult: number; floor: number; label: string }> = [
-  { upTo: 49,    mult: 5.0,  floor: 0.75, label: '1–49 (setup heavy)' },
-  { upTo: 99,    mult: 4.0,  floor: 0.60, label: '50–99' },
-  { upTo: 249,   mult: 3.0,  floor: 0.45, label: '100–249' },
-  { upTo: 499,   mult: 2.5,  floor: 0.30, label: '250–499' },
-  { upTo: 999,   mult: 2.2,  floor: 0.20, label: '500–999' },
-  { upTo: 2499,  mult: 2.0,  floor: 0.12, label: '1,000–2,499' },
-  { upTo: 4999,  mult: 1.85, floor: 0.08, label: '2,500–4,999' },
-  { upTo: Infinity, mult: 1.75, floor: 0.05, label: '5,000+' },
-];
-
-function pickTier(qty: number) {
-  return TIERS.find((t) => qty <= t.upTo) ?? TIERS[TIERS.length - 1];
-}
-
-/** Round UP to the nearest $0.05 to keep prices clean. */
-function roundUpNickel(n: number): number {
-  return Math.ceil(n * 20) / 20;
+function roundUpCent(n: number): number {
+  return Math.ceil(n * 100) / 100;
 }
 
 export function autoPrice(input: AutoPriceInput): AutoPriceResult {
@@ -77,15 +42,15 @@ export function autoPrice(input: AutoPriceInput): AutoPriceResult {
   const pps = Math.max(1, input.piecesPerSheet || 1);
 
   const paperPerPiece = (input.paperCostPerSheet || 0) / pps;
-  const inkPerSide = input.color === 'color' ? INK_COLOR_PER_SIDE : INK_BW_PER_SIDE;
+  const inkPerSide = input.color === 'color'
+    ? (input.colorInkPerSide || 0)
+    : (input.bwInkPerSide || 0);
   const inkPerPiece = inkPerSide * (input.sides === 2 ? 2 : 1);
   const finishingPerPiece = (input.finishingsTotalCost || 0) / qty;
 
   const costPerPiece = paperPerPiece + inkPerPiece + finishingPerPiece;
-  const tier = pickTier(qty);
-
-  const raw = Math.max(costPerPiece * tier.mult, tier.floor);
-  const unitPrice = roundUpNickel(raw);
+  const margin = Math.max(0, input.marginPct || 0);
+  const unitPrice = roundUpCent(costPerPiece * (1 + margin));
 
   return {
     unitPrice,
@@ -93,8 +58,6 @@ export function autoPrice(input: AutoPriceInput): AutoPriceResult {
     paperPerPiece,
     inkPerPiece,
     finishingPerPiece,
-    markupMultiplier: tier.mult,
-    tier: tier.label,
-    minPerPiece: tier.floor,
+    marginPct: margin,
   };
 }

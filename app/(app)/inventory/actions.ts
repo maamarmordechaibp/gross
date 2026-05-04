@@ -27,6 +27,8 @@ export async function createPaperStockAction(formData: FormData) {
     qty_on_hand: 0, // start at zero, receipt adds to it via trigger
     reorder_threshold: formData.get('reorder_threshold') || 0,
     cost_per_sheet: 0,
+    bw_ink_per_side: formData.get('bw_ink_per_side') || 0.015,
+    color_ink_per_side: formData.get('color_ink_per_side') || 0.08,
     unit_cost: formData.get('unit_cost') || 0,
     supplier: formData.get('supplier') || null,
     reference: formData.get('reference') || null,

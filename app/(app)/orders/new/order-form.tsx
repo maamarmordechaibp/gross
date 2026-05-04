@@ -25,6 +25,7 @@ interface Props {
   finishings: FinishingOption[];
   taxRate: number;
   rushMultiplier: number;
+  defaultMargin: number;
 }
 
 const DEFAULT_PRESET = 'Business card (3.5 × 2)';
@@ -45,7 +46,7 @@ function pieceFromProduct(p: Product | undefined): PieceSize | null {
   return null;
 }
 
-export function OrderForm({ customers: initialCustomers, products, papers, finishings, taxRate, rushMultiplier }: Props) {
+export function OrderForm({ customers: initialCustomers, products, papers, finishings, taxRate, rushMultiplier, defaultMargin }: Props) {
   const [pending, startTransition] = useTransition();
   const [customers, setCustomers] = useState(initialCustomers);
   const [customerId, setCustomerId] = useState('');
@@ -125,7 +126,10 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
     quantity: quantity || 1,
     color, sides,
     finishingsTotalCost,
-  }), [paper, imposition, quantity, color, sides, finishingsTotalCost]);
+    bwInkPerSide: paper?.bw_ink_per_side ?? 0,
+    colorInkPerSide: paper?.color_ink_per_side ?? 0,
+    marginPct: defaultMargin,
+  }), [paper, imposition, quantity, color, sides, finishingsTotalCost, defaultMargin]);
 
   useEffect(() => {
     if (!unitPriceTouched) setUnitPrice(autoPriceResult.unitPrice);
@@ -238,7 +242,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
               <p className="mt-1 text-xs text-muted-foreground">
                 {unitPriceTouched
                   ? <>Manual override. Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
-                  : <>Auto: paper + ink + finishing × tier markup ({autoPriceResult.markupMultiplier}× · {autoPriceResult.tier}). Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
+                  : <>Auto: cost × (1 + {Math.round(autoPriceResult.marginPct * 100)}% margin). Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
                 }
               </p>
             </Field>
@@ -266,7 +270,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
               <span>Ink ({sides} side{sides > 1 ? 's' : ''}, {color === 'color' ? 'color' : 'B&W'})</span><span className="text-right tabular">{formatCurrency(autoPriceResult.inkPerPiece)}</span>
               <span>Finishing</span><span className="text-right tabular">{formatCurrency(autoPriceResult.finishingPerPiece)}</span>
               <span className="font-medium">Cost</span><span className="text-right font-medium tabular">{formatCurrency(autoPriceResult.costPerPiece)}</span>
-              <span>× Markup ({autoPriceResult.markupMultiplier}×)</span><span className="text-right tabular">≥ {formatCurrency(autoPriceResult.minPerPiece)} floor</span>
+              <span>+ Margin</span><span className="text-right tabular">{Math.round(autoPriceResult.marginPct * 100)}%</span>
               <span className="font-semibold text-foreground">Customer price</span><span className="text-right font-semibold tabular text-foreground">{formatCurrency(autoPriceResult.unitPrice)}</span>
             </div>
           </div>

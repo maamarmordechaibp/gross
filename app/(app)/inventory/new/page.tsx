@@ -39,6 +39,17 @@ export default function NewPaperStockPage() {
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-4">
+              <h3 className="mb-3 text-sm font-semibold">Ink cost per side (USD)</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5"><Label htmlFor="bw_ink_per_side">Black &amp; white</Label>
+                  <Input id="bw_ink_per_side" name="bw_ink_per_side" type="number" step="0.0001" min={0} defaultValue={0.015} /></div>
+                <div className="space-y-1.5"><Label htmlFor="color_ink_per_side">Full color</Label>
+                  <Input id="color_ink_per_side" name="color_ink_per_side" type="number" step="0.0001" min={0} defaultValue={0.08} /></div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Per-side ink/toner cost for this paper. Used by the auto-price engine.</p>
+            </div>
+
+            <div className="rounded-lg border bg-muted/30 p-4">
               <h3 className="mb-3 text-sm font-semibold">Initial receipt (optional)</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5"><Label htmlFor="qty_on_hand">Quantity received</Label>
