@@ -72,9 +72,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               <Detail icon={Calendar} label="Due date" value={job.due_date ? formatDate(job.due_date) : '—'} />
               <Detail icon={User} label="Assignee" value={job.assignee_name ?? 'Unassigned'} />
               {staff && <Detail label="Paper" value={job.paper_name ? `${job.paper_name} (${job.paper_size})` : '—'} />}
-              {staff && <Detail label="Paper qty" value={String(job.paper_qty ?? 0)} />})} />
-              <Detail label="Paper" value={job.paper_name ? `${job.paper_name} (${job.paper_size})` : '—'} />
-              <Detail label="Paper qty" value={String(job.paper_qty ?? 0)} />
+              {staff && <Detail label="Paper qty" value={String(job.paper_qty ?? 0)} />}
             </CardContent>
           </Card>
 
