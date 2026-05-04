@@ -9,7 +9,7 @@ import { OrderForm } from './order-form';
 export default async function NewOrderPage() {
   const supabase = await createSupabaseServerClient();
   const [customersRes, productsRes, papersRes, finishingsRes, settingsRes] = await Promise.all([
-    supabase.rpc('app_picklist_a').returns<Array<Pick<Customer, 'id' | 'name' | 'company'>>>(),
+    supabase.rpc('app_picklist_a'),
     supabase.from('products').select('*').eq('active', true).order('name').returns<Product[]>(),
     supabase.from('paper_stocks').select('*').eq('active', true).order('name').returns<PaperStock[]>(),
     supabase.from('finishing_options').select('*').eq('active', true).order('name').returns<FinishingOption[]>(),
@@ -27,7 +27,7 @@ export default async function NewOrderPage() {
       </PageHeader>
 
       <OrderForm
-        customers={customersRes.data ?? []}
+        customers={(customersRes.data ?? []) as Customer[]}
         products={productsRes.data ?? []}
         papers={papersRes.data ?? []}
         finishings={finishingsRes.data ?? []}
