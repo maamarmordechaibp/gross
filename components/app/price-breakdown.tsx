@@ -28,12 +28,12 @@ export function PriceBreakdownCard({ breakdown, className, showInternals = true 
       <Row label="Paper"        value={formatCurrency(breakdown.paperCost)} />
       <Row label="Finishing"    value={formatCurrency(breakdown.finishingCost)} />
       <Row label="Labor / Setup" value={formatCurrency(breakdown.laborCost)} />
-      {breakdown.rushSurcharge > 0 && (
-        <Row label="Rush surcharge" value={formatCurrency(breakdown.rushSurcharge)} accent="warning" />
-      )}
       <div className="my-2 h-px bg-border" />
       <Row label="Total cost" value={formatCurrency(breakdown.totalCost)} bold />
       <Row label="Revenue"    value={formatCurrency(breakdown.revenue)} bold />
+      {breakdown.rushSurcharge > 0 && (
+        <Row label="↳ incl. rush surcharge" value={formatCurrency(breakdown.rushSurcharge)} accent="warning" />
+      )}
       {breakdown.tax > 0 && <Row label="Tax" value={formatCurrency(breakdown.tax)} />}
       <div className="my-2 h-px bg-border" />
       <Row

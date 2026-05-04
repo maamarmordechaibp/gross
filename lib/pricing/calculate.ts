@@ -43,11 +43,11 @@ export function calculatePrice(input: PriceInputs): PriceBreakdown {
   const finishingCost = round(input.finishings.reduce((s, f) => s + f.cost_per_unit * f.qty, 0));
   const laborCost     = round(input.productBasePrice);
 
-  const subtotalCost  = paperCost + finishingCost + laborCost;
-  const rushSurcharge = input.isRush ? round(subtotalCost * rushMult) : 0;
-  const totalCost     = round(subtotalCost + rushSurcharge);
-
-  const revenue       = round(input.unitPrice * input.quantity);
+  // Rush is a customer surcharge (revenue), not an internal cost.
+  const totalCost     = round(paperCost + finishingCost + laborCost);
+  const baseRevenue   = round(input.unitPrice * input.quantity);
+  const rushSurcharge = input.isRush ? round(baseRevenue * rushMult) : 0;
+  const revenue       = round(baseRevenue + rushSurcharge);
   const tax           = round(revenue * taxRate);
   const grandTotal    = round(revenue + tax);
   const profit        = round(revenue - totalCost);
