@@ -17,25 +17,37 @@ export async function createJobAction(formData: FormData): Promise<{ ok: boolean
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
 
   const { finishings, ...job } = parsed.data;
+  const specColor = (job.specs?.color as 'color' | 'bw' | undefined) ?? 'color';
+  const specSides = (job.specs?.sides as 1 | 2 | undefined) === 2 ? 2 : 1;
 
   // Server-side guard: never allow a job priced below cost.
-  const [paperRes, productRes, foRes, settingsRes] = await Promise.all([
+  const [paperRes, foRes, settingsRes] = await Promise.all([
     job.paper_stock_id
-      ? supabase.from('paper_stocks').select('cost_per_sheet').eq('id', job.paper_stock_id).single<{ cost_per_sheet: number }>()
+      ? supabase.from('paper_stocks')
+          .select('cost_per_sheet, ink_bw_1side, ink_bw_2side, ink_color_1side, ink_color_2side')
+          .eq('id', job.paper_stock_id).single<{
+            cost_per_sheet: number;
+            ink_bw_1side: number; ink_bw_2side: number;
+            ink_color_1side: number; ink_color_2side: number;
+          }>()
       : Promise.resolve({ data: null, error: null }),
-    supabase.from('products').select('base_price').eq('id', job.product_id).single<{ base_price: number }>(),
     finishings.length
       ? supabase.from('finishing_options').select('id, cost_per_unit').in('id', finishings.map((f) => f.finishing_option_id))
       : Promise.resolve({ data: [] as { id: string; cost_per_unit: number }[], error: null }),
     supabase.from('settings').select('rush_multiplier, tax_rate').eq('id', 1).single<{ rush_multiplier: number; tax_rate: number }>(),
   ]);
 
+  const inkPerPiece = paperRes.data
+    ? (specColor === 'color'
+        ? (specSides === 2 ? paperRes.data.ink_color_2side : paperRes.data.ink_color_1side)
+        : (specSides === 2 ? paperRes.data.ink_bw_2side    : paperRes.data.ink_bw_1side))
+    : 0;
   const foMap = new Map((foRes.data ?? []).map((f) => [f.id, f.cost_per_unit]));
   const breakdown = calculatePrice({
     paperCostPerSheet: paperRes.data?.cost_per_sheet ?? 0,
     paperQty: job.paper_qty ?? 0,
+    inkCost: inkPerPiece * (job.quantity || 0),
     finishings: finishings.map((f) => ({ cost_per_unit: foMap.get(f.finishing_option_id) ?? 0, qty: f.qty })),
-    productBasePrice: productRes.data?.base_price ?? 0,
     unitPrice: job.unit_price,
     quantity: job.quantity,
     isRush: job.is_rush ?? false,

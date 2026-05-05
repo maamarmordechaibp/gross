@@ -6,7 +6,7 @@ describe('calculatePrice', () => {
     const r = calculatePrice({
       quantity: 100, unitPrice: 1,
       paperCostPerSheet: 0.05, paperQty: 50,
-      productBasePrice: 0, finishings: [],
+      finishings: [],
       isRush: false, taxRate: 0.0875,
     });
     expect(r.paperCost).toBe(2.5);
@@ -18,7 +18,6 @@ describe('calculatePrice', () => {
     const r = calculatePrice({
       quantity: 1, unitPrice: 100,
       paperCostPerSheet: 0, paperQty: 0,
-      productBasePrice: 0,
       finishings: [{ cost_per_unit: 10, qty: 2 }],
       isRush: true, rushMultiplier: 0.25, taxRate: 0,
     });
@@ -31,7 +30,7 @@ describe('calculatePrice', () => {
     const r = calculatePrice({
       quantity: 10, unitPrice: 10,
       paperCostPerSheet: 1, paperQty: 10,
-      productBasePrice: 0, finishings: [],
+      finishings: [],
       isRush: false, taxRate: 0,
     });
     expect(r.revenue).toBe(100);
@@ -40,3 +39,4 @@ describe('calculatePrice', () => {
     expect(r.marginPct).toBe(90);
   });
 });
+

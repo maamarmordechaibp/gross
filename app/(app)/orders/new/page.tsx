@@ -13,10 +13,14 @@ export default async function NewOrderPage() {
     supabase.from('products').select('*').eq('active', true).order('name').returns<Product[]>(),
     supabase.from('paper_stocks').select('*').eq('active', true).order('name').returns<PaperStock[]>(),
     supabase.from('finishing_options').select('*').eq('active', true).order('name').returns<FinishingOption[]>(),
-    supabase.from('settings').select('tax_rate, rush_multiplier, default_margin_pct').eq('id', 1).single(),
+    supabase.from('settings').select('tax_rate, rush_multiplier, margin_tiers').eq('id', 1).single(),
   ]);
 
   if (customersRes.error) console.error('[orders/new] customers error:', customersRes.error);
+
+  const tiers = (settingsRes.data?.margin_tiers as Array<{ min_qty: number; margin_pct: number }> | null) ?? [
+    { min_qty: 0, margin_pct: 1.0 },
+  ];
 
   return (
     <div className="space-y-6">
@@ -33,7 +37,7 @@ export default async function NewOrderPage() {
         finishings={finishingsRes.data ?? []}
         taxRate={Number(settingsRes.data?.tax_rate ?? 0)}
         rushMultiplier={Number(settingsRes.data?.rush_multiplier ?? 0.25)}
-        defaultMargin={Number(settingsRes.data?.default_margin_pct ?? 1.0)}
+        marginTiers={tiers}
       />
     </div>
   );

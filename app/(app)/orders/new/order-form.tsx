@@ -10,7 +10,7 @@ import { PriceBreakdownCard } from '@/components/app/price-breakdown';
 import { ImpositionDiagram } from '@/components/app/imposition-diagram';
 import { CustomerQuickAdd } from '@/components/app/customer-quick-add';
 import { calculatePrice } from '@/lib/pricing/calculate';
-import { autoPrice, type ColorMode, type Sides } from '@/lib/pricing/auto-price';
+import { autoPrice, type ColorMode, type Sides, type MarginTier } from '@/lib/pricing/auto-price';
 import { computeImposition, parsePaperSize, PIECE_PRESETS, type PieceSize } from '@/lib/imposition';
 import { formatCurrency } from '@/lib/utils';
 import type { Customer, Product, PaperStock, FinishingOption } from '@/types/database';
@@ -26,7 +26,7 @@ interface Props {
   finishings: FinishingOption[];
   taxRate: number;
   rushMultiplier: number;
-  defaultMargin: number;
+  marginTiers: MarginTier[];
 }
 
 const DEFAULT_PRESET = 'Business card (3.5 × 2)';
@@ -47,7 +47,7 @@ function pieceFromProduct(p: Product | undefined): PieceSize | null {
   return null;
 }
 
-export function OrderForm({ customers: initialCustomers, products, papers, finishings, taxRate, rushMultiplier, defaultMargin }: Props) {
+export function OrderForm({ customers: initialCustomers, products, papers, finishings, taxRate, rushMultiplier, marginTiers }: Props) {
   const [pending, startTransition] = useTransition();
   const [customers, setCustomers] = useState(initialCustomers);
   const [customerId, setCustomerId] = useState('');
@@ -127,10 +127,12 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
     quantity: quantity || 1,
     color, sides,
     finishingsTotalCost,
-    bwInkPerSide: paper?.bw_ink_per_side ?? 0,
-    colorInkPerSide: paper?.color_ink_per_side ?? 0,
-    marginPct: defaultMargin,
-  }), [paper, imposition, quantity, color, sides, finishingsTotalCost, defaultMargin]);
+    inkBw1Side:    paper?.ink_bw_1side    ?? 0,
+    inkBw2Side:    paper?.ink_bw_2side    ?? 0,
+    inkColor1Side: paper?.ink_color_1side ?? 0,
+    inkColor2Side: paper?.ink_color_2side ?? 0,
+    marginTiers,
+  }), [paper, imposition, quantity, color, sides, finishingsTotalCost, marginTiers]);
 
   useEffect(() => {
     if (!unitPriceTouched) setUnitPrice(autoPriceResult.unitPrice);
@@ -139,17 +141,17 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
   const breakdown = useMemo(() => calculatePrice({
     paperCostPerSheet: paper?.cost_per_sheet ?? 0,
     paperQty: paperQty || 0,
+    inkCost: autoPriceResult.inkPerPiece * (quantity || 0),
     finishings: Object.entries(pickedFinishings).map(([id, qty]) => {
       const fo = finishings.find((f) => f.id === id);
       return { cost_per_unit: fo?.cost_per_unit ?? 0, qty };
     }),
-    productBasePrice: product?.base_price ?? 0,
     unitPrice,
     quantity,
     isRush,
     rushMultiplier,
     taxRate,
-  }), [paper, paperQty, pickedFinishings, finishings, product, unitPrice, quantity, isRush, rushMultiplier, taxRate]);
+  }), [paper, paperQty, autoPriceResult, pickedFinishings, finishings, unitPrice, quantity, isRush, rushMultiplier, taxRate]);
 
   function toggleFinishing(id: string) {
     setPickedFinishings((s) => {
@@ -183,7 +185,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
       is_rush: isRush,
       priority,
       due_date: dueDate || null,
-      specs: { ...specs, piece_size: { w: pieceW, h: pieceH } },
+      specs: { ...specs, piece_size: { w: pieceW, h: pieceH }, color, sides },
       notes: notes || null,
       finishings: Object.entries(pickedFinishings).map(([finishing_option_id, qty]) => ({ finishing_option_id, qty })),
     };
@@ -205,7 +207,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
       is_rush: isRush,
       priority,
       due_date: dueDate || null,
-      specs: { ...specs, piece_size: { w: pieceW, h: pieceH } },
+      specs: { ...specs, piece_size: { w: pieceW, h: pieceH }, color, sides },
       notes: notes || null,
       finishings: Object.entries(pickedFinishings).map(([finishing_option_id, qty]) => ({ finishing_option_id, qty })),
     };
@@ -265,7 +267,7 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
               <p className="mt-1 text-xs text-muted-foreground">
                 {unitPriceTouched
                   ? <>Manual override. Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
-                  : <>Auto: cost × (1 + {Math.round(autoPriceResult.marginPct * 100)}% margin). Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
+                  : <>Blended auto-price across volume tiers. Subtotal: <strong className="tabular text-foreground">{formatCurrency(customerRevenue)}</strong></>
                 }
               </p>
             </Field>
@@ -292,10 +294,25 @@ export function OrderForm({ customers: initialCustomers, products, papers, finis
               <span>Paper</span><span className="text-right tabular">{formatCurrency(autoPriceResult.paperPerPiece)}</span>
               <span>Ink ({sides} side{sides > 1 ? 's' : ''}, {color === 'color' ? 'color' : 'B&W'})</span><span className="text-right tabular">{formatCurrency(autoPriceResult.inkPerPiece)}</span>
               <span>Finishing</span><span className="text-right tabular">{formatCurrency(autoPriceResult.finishingPerPiece)}</span>
-              <span className="font-medium">Cost</span><span className="text-right font-medium tabular">{formatCurrency(autoPriceResult.costPerPiece)}</span>
-              <span>+ Margin</span><span className="text-right tabular">{Math.round(autoPriceResult.marginPct * 100)}%</span>
-              <span className="font-semibold text-foreground">Customer price</span><span className="text-right font-semibold tabular text-foreground">{formatCurrency(autoPriceResult.unitPrice)}</span>
+              <span className="font-medium">Cost / piece</span><span className="text-right font-medium tabular">{formatCurrency(autoPriceResult.costPerPiece)}</span>
             </div>
+            {autoPriceResult.tierLines.length > 0 && (
+              <>
+                <div className="mt-2 border-t pt-2 font-semibold uppercase tracking-wider text-muted-foreground">Volume pricing</div>
+                <div className="mt-1 grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-0.5">
+                  {autoPriceResult.tierLines.map((t, i) => (
+                    <div key={i} className="contents">
+                      <span>Pieces {t.fromQty}–{t.toQty} ({t.units})</span>
+                      <span className="text-right tabular">{Math.round(t.marginPct * 100)}%</span>
+                      <span className="text-right tabular">{formatCurrency(t.unitPrice)}/pc</span>
+                    </div>
+                  ))}
+                  <span className="border-t pt-1 font-semibold text-foreground">Blended unit price</span>
+                  <span className="border-t pt-1"></span>
+                  <span className="border-t pt-1 text-right font-semibold tabular text-foreground">{formatCurrency(autoPriceResult.unitPrice)}</span>
+                </div>
+              </>
+            )}
           </div>
         )}
 

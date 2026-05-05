@@ -65,6 +65,10 @@ export interface PaperStock {
   cost_per_sheet: number;
   bw_ink_per_side: number;
   color_ink_per_side: number;
+  ink_bw_1side: number;
+  ink_bw_2side: number;
+  ink_color_1side: number;
+  ink_color_2side: number;
   active: boolean;
 }
 

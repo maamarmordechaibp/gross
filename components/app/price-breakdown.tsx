@@ -26,8 +26,8 @@ export function PriceBreakdownCard({ breakdown, className, showInternals = true 
     <div className={cn('rounded-xl border bg-card p-5 shadow-sm space-y-3', className)}>
       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cost & Profit</div>
       <Row label="Paper"        value={formatCurrency(breakdown.paperCost)} />
+      <Row label="Ink"          value={formatCurrency(breakdown.inkCost)} />
       <Row label="Finishing"    value={formatCurrency(breakdown.finishingCost)} />
-      <Row label="Labor / Setup" value={formatCurrency(breakdown.laborCost)} />
       <div className="my-2 h-px bg-border" />
       <Row label="Total cost" value={formatCurrency(breakdown.totalCost)} bold />
       <Row label="Revenue"    value={formatCurrency(breakdown.revenue)} bold />

@@ -39,14 +39,18 @@ export default function NewPaperStockPage() {
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-4">
-              <h3 className="mb-3 text-sm font-semibold">Ink cost per side (USD)</h3>
+              <h3 className="mb-3 text-sm font-semibold">Ink cost per piece (USD)</h3>
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5"><Label htmlFor="bw_ink_per_side">Black &amp; white</Label>
-                  <Input id="bw_ink_per_side" name="bw_ink_per_side" type="number" step="0.0001" min={0} defaultValue={0.015} /></div>
-                <div className="space-y-1.5"><Label htmlFor="color_ink_per_side">Full color</Label>
-                  <Input id="color_ink_per_side" name="color_ink_per_side" type="number" step="0.0001" min={0} defaultValue={0.08} /></div>
+                <div className="space-y-1.5"><Label htmlFor="ink_bw_1side">Black &amp; white — 1 side</Label>
+                  <Input id="ink_bw_1side" name="ink_bw_1side" type="number" step="0.0001" min={0} defaultValue={0.015} /></div>
+                <div className="space-y-1.5"><Label htmlFor="ink_bw_2side">Black &amp; white — 2 sides</Label>
+                  <Input id="ink_bw_2side" name="ink_bw_2side" type="number" step="0.0001" min={0} defaultValue={0.030} /></div>
+                <div className="space-y-1.5"><Label htmlFor="ink_color_1side">Full color — 1 side</Label>
+                  <Input id="ink_color_1side" name="ink_color_1side" type="number" step="0.0001" min={0} defaultValue={0.080} /></div>
+                <div className="space-y-1.5"><Label htmlFor="ink_color_2side">Full color — 2 sides</Label>
+                  <Input id="ink_color_2side" name="ink_color_2side" type="number" step="0.0001" min={0} defaultValue={0.160} /></div>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">Per-side ink/toner cost for this paper. Used by the auto-price engine.</p>
+              <p className="mt-2 text-xs text-muted-foreground">Per-piece ink/toner cost for this paper. The auto-price engine picks the matching value based on color &amp; sides on the order.</p>
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-4">

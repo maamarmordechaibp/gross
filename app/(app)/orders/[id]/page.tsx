@@ -34,8 +34,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const breakdown: PriceBreakdown = {
     paperCost: Number(job.paper_cost ?? 0),
+    inkCost: 0,
     finishingCost: Number(job.finishing_cost ?? 0),
-    laborCost: Number(job.labor_cost ?? 0),
     rushSurcharge: Number(job.rush_surcharge ?? 0),
     totalCost: Number(job.total_cost ?? 0),
     revenue: Number(job.revenue ?? 0),
