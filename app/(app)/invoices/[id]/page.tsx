@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Printer } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +30,9 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       <PageHeader title={inv.invoice_number} description={inv.customers.name}>
         <Button asChild variant="outline" size="sm">
           <Link href="/invoices"><ArrowLeft className="h-3.5 w-3.5" />Back</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/print/invoices/${inv.id}`} target="_blank"><Printer className="h-3.5 w-3.5" />Print</Link>
         </Button>
       </PageHeader>
 

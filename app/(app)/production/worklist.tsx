@@ -7,7 +7,7 @@ import { JobStatusBadge } from '@/components/app/status-badge';
 import { Button } from '@/components/ui/button';
 import { cn, formatDate } from '@/lib/utils';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { assignPrinterAction, updateJobStatusAction } from '@/app/(app)/orders/actions';
+import { assignPrinterAction, updateJobStatusAction, bulkUpdateJobStatusAction, bulkAssignPrinterAction } from '@/app/(app)/orders/actions';
 import { PRINTERS } from '@/lib/printers';
 import type { JobFull, JobStatus } from '@/types/database';
 
@@ -32,6 +32,34 @@ export function Worklist({ initialJobs }: { initialJobs: JobFull[] }) {
   const [jobs, setJobs] = useState<JobFull[]>(initialJobs);
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAll(ids: string[], on: boolean) {
+    setSelected((s) => { const n = new Set(s); ids.forEach((id) => on ? n.add(id) : n.delete(id)); return n; });
+  }
+  function bulkAdvance(stageJobs: JobFull[]) {
+    const ids = stageJobs.filter((j) => selected.has(j.id)).map((j) => j.id);
+    if (ids.length === 0) return;
+    const next = NEXT[stageJobs[0].status];
+    if (!next) return;
+    startTransition(async () => {
+      const res = await bulkUpdateJobStatusAction(ids, next.to);
+      if (res.ok) { toast.success(`Advanced ${ids.length} jobs to ${next.to}`); setSelected(new Set()); }
+      else toast.error(res.error ?? 'Bulk update failed');
+    });
+  }
+  function bulkAssign(stageJobs: JobFull[], printer: string) {
+    const ids = stageJobs.filter((j) => selected.has(j.id)).map((j) => j.id);
+    if (ids.length === 0 || !printer) return;
+    startTransition(async () => {
+      const res = await bulkAssignPrinterAction(ids, printer);
+      if (res.ok) { toast.success(`Assigned ${printer} to ${ids.length} jobs`); setJobs((js) => js.map((j) => ids.includes(j.id) ? { ...j, printer } : j)); setSelected(new Set()); }
+      else toast.error(res.error ?? 'Bulk assign failed');
+    });
+  }
 
   // Live refresh on any job change
   useEffect(() => {
@@ -88,16 +116,31 @@ export function Worklist({ initialJobs }: { initialJobs: JobFull[] }) {
       {STAGES.map((stage) => {
         const list = jobs.filter((j) => j.status === stage.id);
         if (list.length === 0) return null;
+        const stageIds = list.map((j) => j.id);
+        const allSelected = stageIds.every((id) => selected.has(id));
+        const someSelected = stageIds.some((id) => selected.has(id));
+        const stageNext = NEXT[stage.id];
         return (
           <section key={stage.id}>
-            <div className="mb-2 flex items-baseline gap-2">
+            <div className="mb-2 flex flex-wrap items-baseline gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{stage.label}</h2>
               <span className="text-xs text-muted-foreground tabular">{list.length}</span>
+              {someSelected && (
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{stageIds.filter((id) => selected.has(id)).length} selected</span>
+                  <select onChange={(e) => { if (e.target.value) { bulkAssign(list, e.target.value); e.target.value = ''; } }} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+                    <option value="">Bulk assign press…</option>
+                    {PRINTERS.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {stageNext && <Button size="sm" variant="outline" onClick={() => bulkAdvance(list)} disabled={pending}>{stageNext.label} (bulk)</Button>}
+                </div>
+              )}
             </div>
             <div className="overflow-hidden rounded-xl border bg-card">
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/40 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   <tr>
+                    <th className="w-8 px-3 py-2"><input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(stageIds, e.target.checked)} /></th>
                     <th className="px-3 py-2">Job</th>
                     <th className="px-3 py-2">Customer / Product</th>
                     <th className="px-3 py-2 text-right">Qty</th>
@@ -112,6 +155,7 @@ export function Worklist({ initialJobs }: { initialJobs: JobFull[] }) {
                     const overdue = job.due_date && new Date(job.due_date) < new Date();
                     return (
                       <tr key={job.id} className={cn(job.is_rush && 'bg-destructive/5')}>
+                        <td className="px-3 py-2"><input type="checkbox" checked={selected.has(job.id)} onChange={() => toggle(job.id)} /></td>
                         <td className="px-3 py-2">
                           <Link href={`/orders/${job.id}`} className="block font-mono text-[11px] text-primary hover:underline">{job.job_number}</Link>
                           <div className="mt-0.5 flex items-center gap-1.5">

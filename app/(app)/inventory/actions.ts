@@ -3,20 +3,18 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { paperStockSchema } from '@/lib/validators';
+import { requireRole } from '@/lib/permissions';
 import { z } from 'zod';
 
 const receiveSchema = paperStockSchema.extend({
-  // For receive flow, qty_on_hand is the initial quantity received
   unit_cost: z.coerce.number().nonnegative().optional(),
   supplier: z.string().optional().nullable(),
   reference: z.string().optional().nullable(),
 });
 
-/** Create a brand-new paper stock and (optionally) record an initial receipt. */
 export async function createPaperStockAction(formData: FormData) {
+  const { user } = await requireRole('manager');
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: 'Not authenticated' };
 
   const parsed = receiveSchema.safeParse({
     name: formData.get('name'),
@@ -24,7 +22,7 @@ export async function createPaperStockAction(formData: FormData) {
     weight_gsm: formData.get('weight_gsm') || null,
     color: formData.get('color') || null,
     finish: formData.get('finish') || null,
-    qty_on_hand: 0, // start at zero, receipt adds to it via trigger
+    qty_on_hand: 0,
     reorder_threshold: formData.get('reorder_threshold') || 0,
     cost_per_sheet: 0,
     ink_bw_1side:    formData.get('ink_bw_1side')    || 0.015,
@@ -57,11 +55,54 @@ export async function createPaperStockAction(formData: FormData) {
   redirect('/inventory');
 }
 
+export async function updatePaperStockAction(formData: FormData) {
+  await requireRole('manager');
+  const supabase = await createSupabaseServerClient();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+
+  const parsed = paperStockSchema.partial().safeParse({
+    name: formData.get('name') || undefined,
+    size: formData.get('size') || undefined,
+    weight_gsm: formData.get('weight_gsm') || null,
+    color: formData.get('color') || null,
+    finish: formData.get('finish') || null,
+    reorder_threshold: formData.get('reorder_threshold') ?? undefined,
+    ink_bw_1side: formData.get('ink_bw_1side') ?? undefined,
+    ink_bw_2side: formData.get('ink_bw_2side') ?? undefined,
+    ink_color_1side: formData.get('ink_color_1side') ?? undefined,
+    ink_color_2side: formData.get('ink_color_2side') ?? undefined,
+  });
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0].message };
+
+  const active = formData.get('active') === 'on';
+  const payload = { ...parsed.data, active };
+  const { error } = await supabase.from('paper_stocks').update(payload).eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+
+  revalidatePath('/inventory');
+  revalidatePath(`/inventory/${id}`);
+  redirect(`/inventory/${id}`);
+}
+
+export async function archivePaperStockAction(formData: FormData) {
+  await requireRole('manager');
+  const supabase = await createSupabaseServerClient();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+  const { error } = await supabase
+    .from('paper_stocks')
+    .update({ archived_at: new Date().toISOString(), active: false })
+    .eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath('/inventory');
+  return { ok: true as const };
+}
+
 /** Record a receipt against an existing paper stock. */
 export async function receivePaperStockAction(formData: FormData) {
+  const { user } = await requireRole('manager');
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: 'Not authenticated' };
 
   const paperStockId = String(formData.get('paper_stock_id') ?? '');
   const qty = Number(formData.get('qty') ?? 0);
@@ -78,5 +119,6 @@ export async function receivePaperStockAction(formData: FormData) {
   if (error) return { ok: false as const, error: error.message };
 
   revalidatePath('/inventory');
-  redirect('/inventory');
+  revalidatePath(`/inventory/${paperStockId}`);
+  return { ok: true as const };
 }

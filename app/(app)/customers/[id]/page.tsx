@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil } from 'lucide-react';
+import { ArchiveButton } from '@/components/app/archive-button';
+import { archiveCustomerAction, restoreCustomerAction } from '../actions';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +26,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     <div className="space-y-6">
       <PageHeader title={customer.name} description={customer.company ?? customer.email ?? undefined}>
         <Button asChild variant="outline" size="sm"><Link href="/customers"><ArrowLeft className="h-3.5 w-3.5" />Back</Link></Button>
+        <Button asChild variant="outline" size="sm"><Link href={`/customers/${customer.id}/edit`}><Pencil className="h-3.5 w-3.5" />Edit</Link></Button>
+        {customer.archived_at
+          ? <ArchiveButton action={restoreCustomerAction} hiddenFields={{ id: customer.id }} label="Restore" confirmText="Restore this customer?" />
+          : <ArchiveButton action={archiveCustomerAction} hiddenFields={{ id: customer.id }} redirectTo="/customers" />}
         <Button asChild><Link href={`/orders/new?customer=${customer.id}`}><Plus className="h-4 w-4" />Create job</Link></Button>
       </PageHeader>
 

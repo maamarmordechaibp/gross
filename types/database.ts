@@ -30,6 +30,7 @@ export interface Customer {
   phone: string | null;
   billing_address: Record<string, unknown> | null;
   notes: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +45,7 @@ export interface Product {
   schema: { fields?: ProductFormField[] };
   base_price: number;
   active: boolean;
+  archived_at?: string | null;
 }
 
 export type ProductFormField =
@@ -70,6 +72,7 @@ export interface PaperStock {
   ink_color_1side: number;
   ink_color_2side: number;
   active: boolean;
+  archived_at?: string | null;
 }
 
 export interface FinishingOption {
@@ -79,6 +82,7 @@ export interface FinishingOption {
   cost_per_unit: number;
   machine: string | null;
   active: boolean;
+  archived_at?: string | null;
 }
 
 export interface Job {
@@ -100,6 +104,9 @@ export interface Job {
   internal_notes: string | null;
   printer: string | null;
   printed_at: string | null;
+  parent_job_id?: string | null;
+  cancel_reason?: string | null;
+  template_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -142,7 +149,16 @@ export interface Quote {
   sent_at: string | null;
   decided_at: string | null;
   spec: Record<string, unknown> | null;
+  line_items?: QuoteLineItem[] | null;
+  archived_at?: string | null;
   created_at: string;
+}
+
+export interface QuoteLineItem {
+  description: string;
+  qty: number;
+  unit_price: number;
+  total: number;
 }
 
 export interface Invoice {
@@ -158,6 +174,7 @@ export interface Invoice {
   due_date: string | null;
   stripe_payment_intent_id: string | null;
   notes: string | null;
+  archived_at?: string | null;
   created_at: string;
 }
 

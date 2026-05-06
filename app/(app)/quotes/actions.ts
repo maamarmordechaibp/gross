@@ -7,6 +7,14 @@ import { sendEmail } from '@/lib/resend';
 import { quoteSentEmail } from '@/lib/email-templates';
 import { jobSchema } from '@/lib/validators';
 import { calculatePrice } from '@/lib/pricing/calculate';
+import { requireRole } from '@/lib/permissions';
+
+const lineItemSchema = z.object({
+  description: z.string().min(1),
+  qty: z.coerce.number().nonnegative(),
+  unit_price: z.coerce.number().nonnegative(),
+  total: z.coerce.number().nonnegative(),
+});
 
 const quoteCreateSchema = z.object({
   customer_id: z.string().uuid(),
@@ -16,14 +24,13 @@ const quoteCreateSchema = z.object({
   total: z.coerce.number().nonnegative(),
   notes: z.string().optional().nullable(),
   valid_until: z.string().optional().nullable(),
+  line_items: z.array(lineItemSchema).default([]),
 });
 
-export async function createQuoteAction(formData: FormData) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: 'Not authenticated' };
-
-  const parsed = quoteCreateSchema.safeParse({
+function parseQuoteForm(formData: FormData) {
+  let lineItems: unknown = [];
+  try { lineItems = JSON.parse(String(formData.get('line_items') ?? '[]')); } catch { /* ignore */ }
+  return quoteCreateSchema.safeParse({
     customer_id: formData.get('customer_id'),
     job_id: formData.get('job_id') || null,
     subtotal: formData.get('subtotal') || 0,
@@ -31,7 +38,15 @@ export async function createQuoteAction(formData: FormData) {
     total: formData.get('total') || 0,
     notes: formData.get('notes') || null,
     valid_until: formData.get('valid_until') || null,
+    line_items: lineItems,
   });
+}
+
+export async function createQuoteAction(formData: FormData) {
+  const { user } = await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+
+  const parsed = parseQuoteForm(formData);
   if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0].message };
 
   const { data, error } = await supabase
@@ -45,19 +60,54 @@ export async function createQuoteAction(formData: FormData) {
   redirect(`/quotes/${data!.id}`);
 }
 
+export async function updateQuoteAction(formData: FormData) {
+  await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+
+  // Quote should only be edited while still draft.
+  const { data: existing } = await supabase.from('quotes').select('status').eq('id', id).single<{ status: string }>();
+  if (existing && existing.status !== 'draft') {
+    return { ok: false as const, error: `Cannot edit a ${existing.status} quote` };
+  }
+
+  const parsed = parseQuoteForm(formData);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0].message };
+
+  const { error } = await supabase.from('quotes').update(parsed.data).eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+
+  revalidatePath('/quotes');
+  revalidatePath(`/quotes/${id}`);
+  redirect(`/quotes/${id}`);
+}
+
+export async function archiveQuoteAction(formData: FormData) {
+  await requireRole('manager');
+  const supabase = await createSupabaseServerClient();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+  const { error } = await supabase.from('quotes').update({ archived_at: new Date().toISOString() }).eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath('/quotes');
+  return { ok: true as const };
+}
+
 /**
  * Mark a quote as sent and email a public approval link to the customer.
  * If RESEND_API_KEY is unset, just records sent_at without sending.
  */
 export async function sendQuoteAction(quoteId: string) {
+  await requireRole('staff');
   const supabase = await createSupabaseServerClient();
   const { data: q, error } = await supabase
     .from('quotes')
-    .select('id, quote_number, total, approval_token, valid_until, customers(name, email)')
+    .select('id, quote_number, total, approval_token, valid_until, line_items, customers(name, email)')
     .eq('id', quoteId)
     .single<{
       id: string; quote_number: string; total: number; approval_token: string;
-      valid_until: string | null;
+      valid_until: string | null; line_items: Array<{ description: string; qty: number; unit_price: number; total: number }> | null;
       customers: { name: string; email: string | null };
     }>();
   if (error || !q) return { ok: false as const, error: error?.message ?? 'Quote not found' };
@@ -76,7 +126,11 @@ export async function sendQuoteAction(quoteId: string) {
       valid_until: q.valid_until,
       approve_url: url,
     });
-    await sendEmail({ to: q.customers.email, reply_to: replyTo, ...tpl });
+    const result = await sendEmail({ to: q.customers.email, reply_to: replyTo, ...tpl });
+    if (result && 'error' in result && result.error) {
+      // Don't fail the whole action — record send anyway and surface a soft error.
+      console.error('[quotes.send] email failed:', result.error);
+    }
   }
 
   await supabase.from('quotes').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', quoteId);
@@ -90,9 +144,8 @@ export async function sendQuoteAction(quoteId: string) {
  * Stores full job spec so it can be materialized into a job upon approval.
  */
 export async function createQuoteFromOrderFormAction(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+  const { user } = await requireRole('staff');
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Not authenticated' };
 
   const raw = JSON.parse(String(formData.get('payload')));
   const parsed = jobSchema.safeParse(raw);
@@ -102,8 +155,7 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
   const specColor = (job.specs?.color as 'color' | 'bw' | undefined) ?? 'color';
   const specSides = (job.specs?.sides as 1 | 2 | undefined) === 2 ? 2 : 1;
 
-  // Recompute totals server-side so customer sees authoritative numbers.
-  const [paperRes, foRes, settingsRes] = await Promise.all([
+  const [paperRes, foRes, settingsRes, productRes] = await Promise.all([
     job.paper_stock_id
       ? supabase.from('paper_stocks')
           .select('cost_per_sheet, ink_bw_1side, ink_bw_2side, ink_color_1side, ink_color_2side')
@@ -114,9 +166,10 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
           }>()
       : Promise.resolve({ data: null, error: null }),
     finishings.length
-      ? supabase.from('finishing_options').select('id, cost_per_unit').in('id', finishings.map((f) => f.finishing_option_id))
-      : Promise.resolve({ data: [] as { id: string; cost_per_unit: number }[], error: null }),
+      ? supabase.from('finishing_options').select('id, name, cost_per_unit').in('id', finishings.map((f) => f.finishing_option_id))
+      : Promise.resolve({ data: [] as { id: string; name: string; cost_per_unit: number }[], error: null }),
     supabase.from('settings').select('rush_multiplier, tax_rate').eq('id', 1).single<{ rush_multiplier: number; tax_rate: number }>(),
+    supabase.from('products').select('name').eq('id', job.product_id).single<{ name: string }>(),
   ]);
 
   const inkPerPiece = paperRes.data
@@ -124,12 +177,12 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
         ? (specSides === 2 ? paperRes.data.ink_color_2side : paperRes.data.ink_color_1side)
         : (specSides === 2 ? paperRes.data.ink_bw_2side    : paperRes.data.ink_bw_1side))
     : 0;
-  const foMap = new Map((foRes.data ?? []).map((f) => [f.id, f.cost_per_unit]));
+  const foMap = new Map((foRes.data ?? []).map((f) => [f.id, { name: f.name, cost_per_unit: f.cost_per_unit }]));
   const breakdown = calculatePrice({
     paperCostPerSheet: paperRes.data?.cost_per_sheet ?? 0,
     paperQty: job.paper_qty ?? 0,
     inkCost: inkPerPiece * (job.quantity || 0),
-    finishings: finishings.map((f) => ({ cost_per_unit: foMap.get(f.finishing_option_id) ?? 0, qty: f.qty })),
+    finishings: finishings.map((f) => ({ cost_per_unit: foMap.get(f.finishing_option_id)?.cost_per_unit ?? 0, qty: f.qty })),
     unitPrice: job.unit_price,
     quantity: job.quantity,
     isRush: job.is_rush ?? false,
@@ -139,6 +192,28 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
   if (breakdown.totalCost > 0 && breakdown.revenue < breakdown.totalCost) {
     return { ok: false, error: `Price is below cost (loss of $${(breakdown.totalCost - breakdown.revenue).toFixed(2)}). Raise the unit price.` };
   }
+
+  // Derive line items (visible in customer email + detail).
+  const lineItems = [
+    {
+      description: `${productRes.data?.name ?? 'Print job'}${job.is_rush ? ' (rush)' : ''}`,
+      qty: job.quantity,
+      unit_price: job.unit_price,
+      total: +(job.unit_price * job.quantity).toFixed(2),
+    },
+    ...finishings.map((f) => {
+      const meta = foMap.get(f.finishing_option_id);
+      return {
+        description: `Finishing — ${meta?.name ?? 'option'}`,
+        qty: f.qty,
+        unit_price: meta?.cost_per_unit ?? 0,
+        total: +((meta?.cost_per_unit ?? 0) * f.qty).toFixed(2),
+      };
+    }),
+    ...(breakdown.rushSurcharge > 0
+      ? [{ description: 'Rush surcharge', qty: 1, unit_price: breakdown.rushSurcharge, total: breakdown.rushSurcharge }]
+      : []),
+  ];
 
   const validUntil = new Date();
   validUntil.setDate(validUntil.getDate() + 30);
@@ -151,6 +226,7 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
       tax: breakdown.tax,
       total: breakdown.grandTotal,
       spec: { ...parsed.data },
+      line_items: lineItems,
       valid_until: validUntil.toISOString(),
       created_by: user.id,
     })

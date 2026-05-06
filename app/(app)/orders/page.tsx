@@ -5,35 +5,62 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { JobStatusBadge, RushBadge } from '@/components/app/status-badge';
 import { EmptyState } from '@/components/app/empty-state';
+import { SearchBar, FilterSelect, Pagination, ExportCsvButton } from '@/components/app/list-toolbar';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { JobFull } from '@/types/database';
 
-export default async function OrdersPage() {
+const PER_PAGE = 25;
+const STATUS_OPTIONS = [
+  { value: 'estimate', label: 'Estimate' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'in_production', label: 'In production' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+export default async function OrdersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const q = (sp.q ?? '').trim();
+  const status = sp.status ?? '';
+  const rush = sp.rush ?? '';
+  const page = Math.max(1, Number(sp.page ?? 1));
   const supabase = await createSupabaseServerClient();
-  const { data: jobs } = await supabase
-    .from('v_job_full')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(100)
-    .returns<JobFull[]>();
+
+  let query = supabase.from('v_job_full').select('*', { count: 'exact' });
+  if (status) query = query.eq('status', status);
+  if (rush === '1') query = query.eq('is_rush', true);
+  if (q) {
+    const esc = q.replace(/[%,]/g, '');
+    query = query.or(`job_number.ilike.%${esc}%,customer_name.ilike.%${esc}%,product_name.ilike.%${esc}%`);
+  }
+  query = query.order('created_at', { ascending: false }).range((page - 1) * PER_PAGE, page * PER_PAGE - 1);
+  const { data: jobs, count } = await query.returns<JobFull[]>();
+  const total = count ?? 0;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Orders" description="All print jobs">
+        <ExportCsvButton href="/api/exports/orders" />
         <Button asChild><Link href="/orders/new"><Plus className="h-4 w-4" />New Order</Link></Button>
       </PageHeader>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchBar placeholder="Search job #, customer, product…" />
+        <FilterSelect paramName="status" label="Status" options={STATUS_OPTIONS} />
+        <FilterSelect paramName="rush" label="Rush" options={[{ value: '1', label: 'Rush only' }]} />
+      </div>
 
       {!jobs || jobs.length === 0 ? (
         <EmptyState
           icon={Package}
-          title="No orders yet"
-          description="Create your first order to get production rolling."
-          action={{ label: 'Create order', href: '/orders/new' }}
+          title={q || status || rush ? 'No matches' : 'No orders yet'}
+          description={q || status || rush ? 'Try clearing the filters.' : 'Create your first order to get production rolling.'}
+          action={q || status || rush ? undefined : { label: 'Create order', href: '/orders/new' }}
         />
       ) : (
         <Card className="overflow-hidden">
-          {/* Desktop table */}
           <div className="hidden md:block">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -67,7 +94,6 @@ export default async function OrdersPage() {
               </tbody>
             </table>
           </div>
-          {/* Mobile cards */}
           <ul className="divide-y md:hidden">
             {jobs.map((j) => (
               <li key={j.id}>
@@ -86,6 +112,7 @@ export default async function OrdersPage() {
               </li>
             ))}
           </ul>
+          <Pagination page={page} perPage={PER_PAGE} total={total} />
         </Card>
       )}
     </div>

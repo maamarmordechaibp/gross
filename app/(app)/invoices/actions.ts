@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireRole } from '@/lib/permissions';
 
 const invoiceCreateSchema = z.object({
   customer_id: z.string().uuid(),
@@ -14,12 +15,8 @@ const invoiceCreateSchema = z.object({
   due_date: z.string().optional().nullable(),
 });
 
-export async function createInvoiceAction(formData: FormData) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: 'Not authenticated' };
-
-  const parsed = invoiceCreateSchema.safeParse({
+function parseInvoice(formData: FormData) {
+  return invoiceCreateSchema.safeParse({
     customer_id: formData.get('customer_id'),
     job_id: formData.get('job_id') || null,
     subtotal: formData.get('subtotal') || 0,
@@ -28,6 +25,13 @@ export async function createInvoiceAction(formData: FormData) {
     notes: formData.get('notes') || null,
     due_date: formData.get('due_date') || null,
   });
+}
+
+export async function createInvoiceAction(formData: FormData) {
+  const { user } = await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+
+  const parsed = parseInvoice(formData);
   if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0].message };
 
   const { data, error } = await supabase
@@ -41,10 +45,26 @@ export async function createInvoiceAction(formData: FormData) {
   redirect(`/invoices/${data!.id}`);
 }
 
-export async function recordPaymentAction(formData: FormData) {
+export async function updateInvoiceAction(formData: FormData) {
+  await requireRole('staff');
   const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false as const, error: 'Not authenticated' };
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+
+  const parsed = parseInvoice(formData);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0].message };
+
+  const { error } = await supabase.from('invoices').update(parsed.data).eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+
+  revalidatePath('/invoices');
+  revalidatePath(`/invoices/${id}`);
+  redirect(`/invoices/${id}`);
+}
+
+export async function recordPaymentAction(formData: FormData) {
+  const { user } = await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
 
   const invoiceId = String(formData.get('invoice_id') ?? '');
   const amount = Number(formData.get('amount') ?? 0);
@@ -59,5 +79,29 @@ export async function recordPaymentAction(formData: FormData) {
 
   revalidatePath(`/invoices/${invoiceId}`);
   revalidatePath('/invoices');
+  return { ok: true as const };
+}
+
+export async function archiveInvoiceAction(formData: FormData) {
+  await requireRole('manager');
+  const supabase = await createSupabaseServerClient();
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { ok: false as const, error: 'Missing id' };
+  const { error } = await supabase
+    .from('invoices')
+    .update({ archived_at: new Date().toISOString(), status: 'void' })
+    .eq('id', id);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath('/invoices');
+  return { ok: true as const };
+}
+
+export async function markInvoiceSentAction(invoiceId: string) {
+  await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.from('invoices').update({ status: 'sent' }).eq('id', invoiceId).eq('status', 'draft');
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath('/invoices');
+  revalidatePath(`/invoices/${invoiceId}`);
   return { ok: true as const };
 }

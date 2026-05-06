@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Printer, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +29,15 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
         <Button asChild variant="outline" size="sm">
           <Link href="/quotes"><ArrowLeft className="h-3.5 w-3.5" />Back</Link>
         </Button>
-        {q.status === 'draft' && <SendQuoteButton quoteId={q.id} />}
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/print/quotes/${q.id}`} target="_blank"><Printer className="h-3.5 w-3.5" />Print</Link>
+        </Button>
+        {q.status === 'draft' && (<>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/quotes/${q.id}/edit`}><Pencil className="h-3.5 w-3.5" />Edit</Link>
+          </Button>
+          <SendQuoteButton quoteId={q.id} />
+        </>)}
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">

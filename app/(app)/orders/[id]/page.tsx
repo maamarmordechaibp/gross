@@ -1,17 +1,24 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Calendar, User, Package } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Package, Pencil, Copy, Printer } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { JobStatusBadge, RushBadge } from '@/components/app/status-badge';
 import { PriceBreakdownCard } from '@/components/app/price-breakdown';
 import { JobFiles } from '@/components/app/job-files';
+import { ArchiveButton } from '@/components/app/archive-button';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { isStaff } from '@/lib/supabase/role';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { duplicateJobAction, cancelJobAction } from '../actions';
 import type { JobFull } from '@/types/database';
 import type { PriceBreakdown } from '@/lib/pricing/calculate';
+
+async function duplicate(formData: FormData) {
+  'use server';
+  await duplicateJobAction(formData);
+}
 
 export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -54,6 +61,21 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <Button asChild variant="outline" size="sm">
           <Link href="/orders"><ArrowLeft className="h-3.5 w-3.5" />All orders</Link>
         </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/print/orders/${job.id}/ticket`} target="_blank"><Printer className="h-3.5 w-3.5" />Job ticket</Link>
+        </Button>
+        {staff && (
+          <>
+            <Button asChild variant="outline" size="sm"><Link href={`/orders/${job.id}/edit`}><Pencil className="h-3.5 w-3.5" />Edit</Link></Button>
+            <form action={duplicate}>
+              <input type="hidden" name="id" value={job.id} />
+              <Button type="submit" variant="outline" size="sm"><Copy className="h-3.5 w-3.5" />Duplicate</Button>
+            </form>
+            {job.status !== 'cancelled' && job.status !== 'delivered' && (
+              <ArchiveButton action={cancelJobAction} hiddenFields={{ id: job.id, reason: 'Cancelled by staff' }} label="Cancel" confirmText="Cancel this job? Reserved stock will be released." />
+            )}
+          </>
+        )}
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">

@@ -1,0 +1,29 @@
+.print-shell {
+  font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+  color: #111;
+  padding: 24px;
+  max-width: 760px;
+  margin: 0 auto;
+  background: #fff;
+}
+.print-shell h1 { font-size: 22px; margin: 0 0 4px; }
+.print-shell h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #555; margin: 24px 0 6px; }
+.print-shell table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.print-shell th, .print-shell td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #eee; }
+.print-shell th { background: #f5f5f5; font-weight: 600; }
+.print-shell .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.print-shell .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #777; }
+.print-shell .value { font-weight: 600; }
+.print-shell .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #fee; color: #c00; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.print-shell .row { display: flex; justify-content: space-between; align-items: flex-start; }
+.print-shell .header { border-bottom: 2px solid #111; padding-bottom: 12px; }
+.print-shell .footer { margin-top: 32px; border-top: 1px solid #ddd; padding-top: 12px; font-size: 11px; color: #777; }
+.print-shell .right { text-align: right; }
+.print-shell .totals td { font-size: 14px; }
+.print-shell .totals tr:last-child td { font-weight: 700; font-size: 16px; border-top: 2px solid #111; }
+
+@media print {
+  @page { margin: 0.5in; }
+  .no-print { display: none !important; }
+  .print-shell { padding: 0; }
+}

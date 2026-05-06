@@ -84,6 +84,31 @@ export const invoiceSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
+// ---- Update / partial schemas (for edit forms) ------------------------------
+export const customerUpdateSchema = customerSchema.partial();
+export const productUpdateSchema  = productSchema.partial();
+export const paperStockUpdateSchema = paperStockSchema.partial().extend({
+  active: z.boolean().optional(),
+});
+export const finishingUpdateSchema  = finishingSchema.partial().extend({
+  active: z.boolean().optional(),
+});
+export const quoteUpdateSchema = quoteSchema.partial();
+export const invoiceUpdateSchema = invoiceSchema.partial();
+
+/**
+ * Job edit allows changing pricing / scheduling / specs but locks
+ * customer_id and product_id (a different order should be a different job).
+ */
+export const jobUpdateSchema = jobSchema
+  .omit({ customer_id: true, product_id: true })
+  .partial()
+  .extend({
+    cancel_reason: z.string().optional().nullable(),
+  });
+
+export const idSchema = z.object({ id: z.string().uuid() });
+
 export type CustomerInput     = z.infer<typeof customerSchema>;
 export type JobInput          = z.infer<typeof jobSchema>;
 export type ProductInput      = z.infer<typeof productSchema>;
