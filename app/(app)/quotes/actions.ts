@@ -56,6 +56,9 @@ export async function createQuoteAction(formData: FormData) {
     .single();
   if (error) return { ok: false as const, error: error.message };
 
+  // Auto-send to the customer (no-op if customer has no email or RESEND_API_KEY is unset).
+  await sendQuoteAction(data!.id).catch((e) => console.error('[quotes.create] auto-send failed:', e));
+
   revalidatePath('/quotes');
   redirect(`/quotes/${data!.id}`);
 }
@@ -115,7 +118,7 @@ export async function sendQuoteAction(quoteId: string) {
   const { data: settings } = await supabase.from('settings').select('company_email').eq('id', 1).single<{ company_email: string | null }>();
   const replyTo = settings?.company_email ?? undefined;
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.grossprinting.shop';
   const url = `${baseUrl}/quote/approve/${q.approval_token}`;
 
   if (q.customers.email) {
@@ -234,6 +237,80 @@ export async function createQuoteFromOrderFormAction(formData: FormData): Promis
     .single();
   if (error) return { ok: false, error: error.message };
 
+  // Auto-send to the customer (no-op if no email / RESEND_API_KEY).
+  await sendQuoteAction(data!.id).catch((e) => console.error('[quotes.create-from-order] auto-send failed:', e));
+
   revalidatePath('/quotes');
   redirect(`/quotes/${data!.id}`);
+}
+
+/**
+ * Staff records customer's verbal approval (or decline) over the phone.
+ * Mirrors the public token-based action but is gated by the staff role and
+ * uses the authenticated server client so RLS still applies.
+ */
+export async function approveQuoteOnBehalfAction(quoteId: string) {
+  await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+
+  const { data: q, error } = await supabase
+    .from('quotes')
+    .select('id, status, customer_id, spec, job_id')
+    .eq('id', quoteId)
+    .single<{ id: string; status: string; customer_id: string; spec: unknown; job_id: string | null }>();
+  if (error || !q) return { ok: false as const, error: error?.message ?? 'Quote not found' };
+
+  if (q.status === 'approved' && q.job_id) {
+    return { ok: true as const, jobId: q.job_id };
+  }
+
+  let jobId: string | null = q.job_id;
+
+  if (!jobId && q.spec) {
+    const parsed = jobSchema.safeParse(q.spec);
+    if (parsed.success) {
+      const { finishings, ...job } = parsed.data;
+      const { data: created } = await supabase
+        .from('jobs')
+        .insert({ ...job, customer_id: q.customer_id })
+        .select('id')
+        .single<{ id: string }>();
+      if (created) {
+        jobId = created.id;
+        if (finishings.length) {
+          await supabase
+            .from('job_finishings')
+            .insert(finishings.map((f) => ({ job_id: created.id, ...f })));
+        }
+      }
+    }
+  }
+
+  const { error: updErr } = await supabase
+    .from('quotes')
+    .update({
+      status: 'approved',
+      decided_at: new Date().toISOString(),
+      job_id: jobId,
+    })
+    .eq('id', q.id);
+  if (updErr) return { ok: false as const, error: updErr.message };
+
+  revalidatePath(`/quotes/${q.id}`);
+  revalidatePath('/quotes');
+  revalidatePath('/orders');
+  return { ok: true as const, jobId };
+}
+
+export async function rejectQuoteOnBehalfAction(quoteId: string) {
+  await requireRole('staff');
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from('quotes')
+    .update({ status: 'rejected', decided_at: new Date().toISOString() })
+    .eq('id', quoteId);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath('/quotes');
+  return { ok: true as const };
 }

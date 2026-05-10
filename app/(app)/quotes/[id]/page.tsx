@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Quote } from '@/types/database';
 import { SendQuoteButton } from './send-button';
+import { ApproveOnBehalfButtons } from './approve-buttons';
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,7 +21,7 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
     .maybeSingle<Quote & { customers: { name: string; company: string | null; email: string | null } }>();
   if (!q) notFound();
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.grossprinting.shop';
   const approveUrl = q.approval_token ? `${baseUrl}/quote/approve/${q.approval_token}` : null;
 
   return (
@@ -38,6 +39,9 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
           </Button>
           <SendQuoteButton quoteId={q.id} />
         </>)}
+        {(q.status === 'draft' || q.status === 'sent') && (
+          <ApproveOnBehalfButtons quoteId={q.id} />
+        )}
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">

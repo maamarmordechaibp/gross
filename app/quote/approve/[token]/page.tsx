@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { approveQuoteAction, rejectQuoteAction } from './actions';
 
+interface LineItem { description: string; qty: number; unit_price: number; total: number }
+
 export default async function QuoteApprovalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const supabase = createSupabaseAdminClient();
@@ -16,6 +18,7 @@ export default async function QuoteApprovalPage({ params }: { params: Promise<{ 
   if (!quote) notFound();
 
   const decided = quote.status === 'approved' || quote.status === 'rejected';
+  const items: LineItem[] = Array.isArray(quote.line_items) ? (quote.line_items as LineItem[]) : [];
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
@@ -27,6 +30,38 @@ export default async function QuoteApprovalPage({ params }: { params: Promise<{ 
 
       <Card>
         <CardContent className="space-y-4 p-6">
+          {items.length > 0 && (
+            <div className="overflow-hidden rounded-lg border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2">Description</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2 text-right">Unit</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {items.map((it, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2">{it.description}</td>
+                      <td className="px-3 py-2 text-right tabular">{it.qty}</td>
+                      <td className="px-3 py-2 text-right tabular">{formatCurrency(it.unit_price)}</td>
+                      <td className="px-3 py-2 text-right tabular">{formatCurrency(it.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {quote.notes && (
+            <div>
+              <div className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Notes</div>
+              <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-sm font-sans">{quote.notes}</pre>
+            </div>
+          )}
+
           <Row k="Subtotal" v={formatCurrency(quote.subtotal)} />
           <Row k="Tax" v={formatCurrency(quote.tax)} />
           <div className="border-t pt-3">

@@ -36,18 +36,22 @@ export function QuoteForm({ customers, taxRate }: Props) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const linesText = lines
+    const items = lines
       .filter((l) => l.description)
-      .map((l) => `• ${l.description} — ${l.qty} × ${formatCurrency(l.unit)} = ${formatCurrency(l.qty * l.unit)}`)
-      .join('\n');
-    const fullNotes = [linesText, notes].filter(Boolean).join('\n\n');
+      .map((l) => ({
+        description: l.description,
+        qty: Number(l.qty) || 0,
+        unit_price: Number(l.unit) || 0,
+        total: (Number(l.qty) || 0) * (Number(l.unit) || 0),
+      }));
 
     const fd = new FormData();
     fd.set('customer_id', customerId);
     fd.set('subtotal', String(subtotal));
     fd.set('tax', String(tax));
     fd.set('total', String(total));
-    fd.set('notes', fullNotes);
+    fd.set('notes', notes);
+    fd.set('line_items', JSON.stringify(items));
     if (validUntil) fd.set('valid_until', new Date(validUntil).toISOString());
 
     startTransition(async () => {
